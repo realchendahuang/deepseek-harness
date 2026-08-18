@@ -156,8 +156,12 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
           toolBlocks.set(call.index, block)
           yield { type: 'block-start', index: block.index, blockType: 'tool-call' }
         }
-        if (call.id !== undefined) block.callId = call.id
-        if (call.function?.name !== undefined) block.name = call.function.name
+        // Some gateways/proxies send explicit `null` for id/name on continuation
+        // frames instead of omitting them (OpenAI-compatible stream contract).
+        // `!= null` rejects both `undefined` and `null` so a null continuation
+        // frame cannot clobber the accumulated call identity.
+        if (call.id != null) block.callId = call.id
+        if (call.function?.name != null) block.name = call.function.name
         const fragment = call.function?.arguments ?? ''
         block.text += fragment
         yield {

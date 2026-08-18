@@ -328,6 +328,29 @@ describe('translate: defensive tool-call branches', () => {
     ])
   })
 
+  it('keeps accumulated id/name when continuation frames carry explicit nulls (gateway tolerance)', async () => {
+    // Some gateways/proxies send `id: null` / `name: null` on continuation
+    // frames instead of omitting the fields; the accumulated call identity
+    // must survive those frames (regression: they clobbered callId/name and
+    // every tool call failed with an empty name).
+    const chunks = await collect(translate(feed(
+      firstChunk,
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_00_x', type: 'function', function: { name: 'get_weather', arguments: '' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: null, function: { name: null, arguments: '{"city"' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: null, function: { name: null, arguments: ': "Paris"}' } }] } }] },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+      DONE,
+    )))
+    expect(chunks).toEqual([
+      { type: 'block-start', index: 0, blockType: 'tool-call' },
+      { type: 'tool-call-delta', index: 0, id: 'call_00_x', name: 'get_weather', argumentsDelta: '' },
+      { type: 'tool-call-delta', index: 0, id: 'call_00_x', name: 'get_weather', argumentsDelta: '{"city"' },
+      { type: 'tool-call-delta', index: 0, id: 'call_00_x', name: 'get_weather', argumentsDelta: ': "Paris"}' },
+      { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'call_00_x', name: 'get_weather', arguments: '{"city": "Paris"}' } },
+      { type: 'finish', reason: { kind: 'tool-calls' } },
+    ])
+  })
+
   it('handles tool_call deltas with a function object but no arguments field', async () => {
     const chunks = await collect(translate(feed(
       firstChunk,
